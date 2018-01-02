@@ -51,6 +51,7 @@ struct imx6_pcie {
 	int			dis_gpio;
 	int			power_on_gpio;
 	struct gpio_desc	*reset_gpios[5];
+	u32			phy_refclk;
 	struct clk		*pcie_bus;
 	struct clk		*pcie_inbound_axi;
 	struct clk		*pcie_phy;
@@ -497,7 +498,10 @@ static int imx6_pcie_deassert_core_reset(struct pcie_port *pp)
 
 		/* wait for phy pll lock firstly. */
 		pci_imx_phy_pll_locked(imx6_pcie);
-	} else if (is_imx6sx_pcie(imx6_pcie)) {
+	}
+
+	/* Release the i.MX6 PCIe PHY reset here */
+	if (is_imx6sx_pcie(imx6_pcie)) {
 		regmap_update_bits(imx6_pcie->iomuxc_gpr, IOMUXC_GPR5,
 				IMX6SX_GPR5_PCIE_BTNRST, 0);
 	} else if (is_imx6qp_pcie(imx6_pcie)) {
@@ -562,7 +566,7 @@ static void imx6_pcie_init_phy(struct pcie_port *pp)
 
 		/* pcie phy ref clock select; 1? internal pll : external osc */
 		regmap_update_bits(imx6_pcie->iomuxc_gpr, IOMUXC_GPR12,
-				BIT(5), 0);
+				BIT(5), imx6_pcie->phy_refclk ? BIT(5) : 0);
 	} else if (is_imx6sx_pcie(imx6_pcie)) {
 		/* Force PCIe PHY reset */
 		regmap_update_bits(imx6_pcie->iomuxc_gpr, IOMUXC_GPR5,
@@ -1243,6 +1247,11 @@ static int __init imx6_pcie_probe(struct platform_device *pdev)
 	pp->dbi_base = devm_ioremap_resource(&pdev->dev, dbi_base);
 	if (IS_ERR(pp->dbi_base))
 		return PTR_ERR(pp->dbi_base);
+
+	/* Fetch PHY Reference Clock */
+	if (of_property_read_u32(np, "phy-ref-clk", &imx6_pcie->phy_refclk))
+		imx6_pcie->phy_refclk = 0;
+	pr_info("%s: phy_refclk = %d\n", __func__, imx6_pcie->phy_refclk);
 
 	/* Fetch GPIOs */
 	imx6_pcie->dis_gpio = of_get_named_gpio(np, "disable-gpio", 0);
